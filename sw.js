@@ -2,7 +2,7 @@
 /* Additive only: does not touch app logic. Caches same-origin static assets. */
 /* External APIs (Google Sheets, Workers, raw GitHub) are network-only. */
 
-const CACHE_NAME = 'k1266-v2';
+const CACHE_NAME = 'k1266-v3';
 const ASSETS = [
   './',
   './index.html',
