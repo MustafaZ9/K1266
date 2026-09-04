@@ -546,6 +546,42 @@ body::before {
 
 .guide-content a:hover { text-decoration: underline; }
 
+/* ── Last Redeem Status ── */
+.last-redeem {
+    margin-top: 48px;
+    padding: 16px 0;
+    border-top: 1px solid var(--border-subtle);
+    text-align: center;
+    opacity: 0.35;
+    transition: opacity var(--transition-base);
+}
+
+.last-redeem:hover { opacity: 0.7; }
+.last-redeem:empty { display: none; }
+
+.last-redeem .redeem-code {
+    font-size: var(--text-xs);
+    font-weight: 600;
+    color: var(--accent-redeem);
+    letter-spacing: 1px;
+    margin-bottom: 4px;
+}
+
+.last-redeem .redeem-stats {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    letter-spacing: 0.5px;
+    line-height: 1.8;
+}
+
+.last-redeem .redeem-stats span {
+    margin: 0 6px;
+}
+
+.last-redeem .redeem-stats .sep {
+    color: var(--border-strong);
+}
+
 /* ── Floating Redeem Button ── */
 .redeem-fab {
     position: fixed;
