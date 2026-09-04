@@ -8,8 +8,8 @@
   let deferredPrompt = null;
   let bannerShown = false;
 
-  const STORAGE_DISMISSED = 'k1266-pwa-dismissed-at';
-  const STORAGE_INSTALLED = 'k1266-pwa-installed';
+  const STORAGE_DISMISSED = 'k1266-pwa-dismissed-at-v2';
+  const STORAGE_INSTALLED = 'k1266-pwa-installed-v2';
   const DISMISS_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
 
   const isIOS = () => {
@@ -137,8 +137,8 @@
     e.preventDefault();
     deferredPrompt = e;
     if (isInstalled() || wasRecentlyDismissed()) return;
-    // show banner shortly after capture (user has engaged enough for prompt to be capturable)
-    setTimeout(() => showBanner('android'), 1200);
+    // Show our install suggestion as soon as Chrome says native install is available.
+    setTimeout(() => showBanner('android'), 250);
     window.dispatchEvent(new CustomEvent('k1266-pwa-installable'));
   });
 
@@ -151,13 +151,12 @@
 
   // iOS Safari: no beforeinstallprompt — show instructions if not standalone
   document.addEventListener('DOMContentLoaded', () => {
-    // give SW time to register, then decide
+    // iOS has no native install event, so show the short instruction banner directly.
     setTimeout(() => {
       if (isIOS() && !isInstalled() && !wasRecentlyDismissed() && !deferredPrompt) {
-        // only show on iOS Safari, not Chrome on iOS (CriOS doesn't support standalone either)
         showBanner('ios');
       }
-    }, 1800);
+    }, 800);
   });
 
   Object.defineProperty(window, '_k1266DeferredPrompt', { get: () => deferredPrompt });
