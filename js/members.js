@@ -3,6 +3,7 @@
    No full list shown. Search your ID to check.
    ============================================ */
 
+const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/1GS08T9-VhX-o2596s1-pAUZbMUMsY3U1HU-mZSgcP8c/gviz/tq?tqx=out:csv&gid=295962408';
 const SHEET_WEBHOOK = 'https://script.google.com/macros/s/AKfycbz2jtFeH-tPZgKKMkBh_yTOVIatsdcYETwcznsJdT7aJi3FQaBpThlGb5Qq2eODz0sy4Q/exec';
 const SHEET_GID = '295962408';
 
@@ -11,52 +12,34 @@ let membersLoaded = false;
 
 async function loadMembers() {
     try {
-        const url = `${SHEET_WEBHOOK}?gid=${SHEET_GID}&action=read`;
-        const response = await fetch(url);
-        const data = await response.json();
-
-        if (data.status === 'success' && Array.isArray(data.data)) {
-            allMembers = data.data.map(row => ({
-                id: String(row[0] || '').trim(),
-                kingdom: String(row[1] || '1266').trim()
-            })).filter(m => m.id && /^\d+$/.test(m.id));
-        } else {
-            allMembers = parseFallback(data);
-        }
-
-        if (allMembers.length === 0) await loadFromCSV();
-        membersLoaded = true;
-        updateStats();
-    } catch (err) {
-        console.error('Sheet load failed, using CSV fallback:', err);
-        await loadFromCSV();
-        membersLoaded = true;
-        updateStats();
-    }
-}
-
-function parseFallback(data) {
-    if (Array.isArray(data)) {
-        return data.map(item => {
-            if (Array.isArray(item)) return { id: String(item[0]).trim(), kingdom: String(item[1] || '1266').trim() };
-            if (typeof item === 'object') return { id: String(item.id || item.fid || '').trim(), kingdom: String(item.kingdom || item.kid || '1266').trim() };
-            return { id: String(item).trim(), kingdom: '1266' };
-        }).filter(m => m.id && /^\d+$/.test(m.id));
-    }
-    return [];
-}
-
-async function loadFromCSV() {
-    try {
-        const resp = await fetch('https://raw.githubusercontent.com/MustafaZ9/autokgc/main/lod.csv');
+        // Primary: direct Google Sheet CSV export (most reliable)
+        const resp = await fetch(SHEET_CSV_URL);
         const text = await resp.text();
-        allMembers = text.split('\n')
-            .map(l => l.trim()).filter(l => l && !l.startsWith('#'))
-            .map(l => { const p = l.split(','); return { id: p[0].trim(), kingdom: (p[1] || '1266').trim() }; })
-            .filter(m => /^\d+$/.test(m.id));
-    } catch (e) {
-        allMembers = [];
+        allMembers = parseCSVText(text);
+    } catch (err) {
+        console.error('Sheet CSV failed, trying raw GitHub fallback:', err);
     }
+
+    if (allMembers.length === 0) {
+        try {
+            const resp = await fetch('https://raw.githubusercontent.com/MustafaZ9/autokgc/main/lod.csv');
+            const text = await resp.text();
+            allMembers = parseCSVText(text);
+        } catch (e) {
+            allMembers = [];
+        }
+    }
+
+    membersLoaded = true;
+    updateStats();
+}
+
+function parseCSVText(text) {
+    return text.split('\n')
+        .map(l => l.replace(/"/g, '').trim())
+        .filter(l => l && !l.startsWith('#'))
+        .map(l => { const p = l.split(','); return { id: p[0].trim(), kingdom: (p[1] || '1266').trim() }; })
+        .filter(m => /^\d+$/.test(m.id));
 }
 
 function updateStats() {
