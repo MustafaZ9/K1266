@@ -63,5 +63,13 @@ document.getElementById('add-modal').addEventListener('click', function (e) {
 });
 
 document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') closeAddModal();
+    if (e.key === 'Escape') {
+        closeAddModal();
+        if (typeof closeCodeModal === 'function') closeCodeModal();
+    }
+});
+
+// Click-to-close for code modal backdrop
+document.getElementById('code-modal')?.addEventListener('click', function (e) {
+    if (e.target === this && typeof closeCodeModal === 'function') closeCodeModal();
 });

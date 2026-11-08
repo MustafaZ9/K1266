@@ -90,9 +90,9 @@
 </div>
 
 <!-- ── Floating Redeem Button ── -->
-<button class="redeem-fab" id="redeemFab" title="Trigger Gift Code Redemption">
+<button class="redeem-fab" id="redeemFab" title="Tap: auto redeem | Hold: enter code">
     🎁
-    <span class="fab-tooltip">Redeem Codes</span>
+    <span class="fab-tooltip">Tap: Auto · Hold: Manual</span>
 </button>
 <div class="redeem-toast" id="redeemToast"></div>
 
@@ -115,6 +115,26 @@
         <div class="form-actions">
             <button class="btn btn-secondary" onclick="closeAddModal()">Cancel</button>
             <button class="btn btn-primary" id="btn-submit" onclick="submitNewMember()">Add</button>
+        </div>
+    </div>
+</div>
+
+<!-- ── Manual Code Entry Modal ── -->
+<div class="modal-backdrop" id="code-modal">
+    <div class="modal-panel">
+        <div class="modal-header-row">
+            <div class="modal-title">Enter Gift Code</div>
+            <button class="modal-close" onclick="closeCodeModal()">✕</button>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Gift Code</label>
+            <input type="text" class="form-input" id="manual-code-input"
+                   placeholder="e.g. TGIF1107" autocomplete="off" autocapitalize="characters"
+                   onkeydown="if(event.key==='Enter') submitManualCode()">
+        </div>
+        <div class="form-actions">
+            <button class="btn btn-secondary" onclick="closeCodeModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="submitManualCode()">Redeem</button>
         </div>
     </div>
 </div>
