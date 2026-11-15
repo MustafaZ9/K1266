@@ -585,8 +585,8 @@ body::before {
 /* ── Floating Redeem Button ── */
 .redeem-fab {
     position: fixed;
-    bottom: 30px;
-    right: 30px;
+    bottom: calc(30px + env(safe-area-inset-bottom, 0px));
+    right: calc(30px + env(safe-area-inset-right, 0px));
     z-index: var(--z-fab);
     width: 64px;
     height: 64px;
@@ -596,12 +596,36 @@ body::before {
     color: #1a1a1a;
     font-size: 1.6rem;
     cursor: pointer;
+    touch-action: none;                       /* Pointer Events own the whole gesture */
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;              /* no iOS long-press callout menu */
+    -webkit-tap-highlight-color: transparent;
     display: flex;
     align-items: center;
     justify-content: center;
     box-shadow: 0 4px 20px rgba(245, 158, 11, 0.35), 0 0 40px rgba(245, 158, 11, 0.1);
     transition: transform var(--transition-base), box-shadow var(--transition-base);
     animation: fabPulse 3s ease-in-out infinite;
+}
+
+.redeem-fab.busy { animation: none; }
+
+/* Hold progress ring — fills around the FAB while holding */
+.fab-hold-ring {
+    position: absolute;
+    inset: -5px;
+    width: calc(100% + 10px);
+    height: calc(100% + 10px);
+    transform: rotate(-90deg);                /* start at 12 o'clock */
+    pointer-events: none;
+}
+
+.fab-hold-ring circle {
+    fill: none;
+    stroke: rgba(255, 255, 255, 0.95);
+    stroke-width: 3;
+    stroke-linecap: round;
 }
 
 .redeem-fab:hover {
@@ -638,8 +662,8 @@ body::before {
 
 .redeem-toast {
     position: fixed;
-    bottom: 110px;
-    right: 30px;
+    bottom: calc(110px + env(safe-area-inset-bottom, 0px));
+    right: calc(30px + env(safe-area-inset-right, 0px));
     background: var(--bg-card-solid);
     border: 1px solid var(--border-default);
     color: var(--text-primary);
@@ -658,6 +682,14 @@ body::before {
 .redeem-toast.show { opacity: 1; transform: translateY(0); }
 .redeem-toast.success { border-color: var(--success); color: var(--success); }
 .redeem-toast.error { border-color: var(--danger); color: var(--danger); }
+.redeem-toast.info { border-color: var(--info); color: var(--info); }
+
+/* ── Push notify button (header action) ── */
+.push-btn.on {
+    border-color: var(--success);
+    color: var(--success);
+    box-shadow: 0 0 14px rgba(34, 197, 94, 0.18);
+}
 
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
@@ -682,9 +714,10 @@ body::before {
     .section-title { font-size: var(--text-2xl); }
     .guides-grid { grid-template-columns: 1fr; }
     .stats-row { gap: 16px; }
-    .redeem-fab { width: 56px; height: 56px; font-size: 1.4rem; bottom: 90px; right: 16px; }
-    .redeem-toast { bottom: 160px; right: 16px; left: 16px; }
+    .redeem-fab { width: 56px; height: 56px; font-size: 1.4rem; bottom: calc(90px + env(safe-area-inset-bottom, 0px)); right: calc(16px + env(safe-area-inset-right, 0px)); }
+    .redeem-toast { bottom: calc(160px + env(safe-area-inset-bottom, 0px)); right: 16px; left: 16px; }
     .fab-tooltip { display: none; }
+    .push-btn { width: 100%; margin-top: 8px; }
 }
 
 @media (max-width: 480px) {

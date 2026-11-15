@@ -2,7 +2,7 @@
 /* Additive only: does not touch app logic. Caches same-origin static assets. */
 /* External APIs (Google Sheets, Workers, raw GitHub) are network-only. */
 
-const CACHE_NAME = 'k1266-v4';
+const CACHE_NAME = 'k1266-v5';
 const ASSETS = [
   './',
   './index.html',
@@ -13,6 +13,7 @@ const ASSETS = [
   './js/redeem.js',
   './js/status.js',
   './js/pwa-install.js',
+  './js/push.js',
   './data/guides.json',
   './manifest.webmanifest',
   './icons/icon-96.png',
@@ -97,6 +98,32 @@ self.addEventListener('fetch', (event) => {
       // For images/css/js fallback could return empty but we let it fail
       return Response.error();
     }
+  })());
+});
+
+/* ── Web Push: show the notification when a new gift code drops ── */
+self.addEventListener('push', (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch (e) { /* keep defaults */ }
+  event.waitUntil(self.registration.showNotification(data.title || '🎁 K1266', {
+    body: data.body || 'New gift code available!',
+    icon: './icons/icon-192.png',
+    badge: './icons/icon-96.png',
+    tag: 'k1266-gift-code',
+    data: { url: data.url || './index.html' },
+  }));
+});
+
+/* ── Focus the app (or open it) when a notification is tapped ── */
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || './index.html';
+  event.waitUntil((async () => {
+    const clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const client of clientList) {
+      if ('focus' in client) { await client.focus(); return; }
+    }
+    if (self.clients.openWindow) await self.clients.openWindow(url);
   })());
 });
 

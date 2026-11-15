@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="description" content="K1266 — Auto Gift Code Redeem & Kingdom Management">
     <title>K1266</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -69,6 +69,7 @@
 
                 <div style="text-align:center; margin-top:24px;">
                     <button class="btn btn-primary" onclick="openAddModal()">+ Add Player</button>
+                    <button class="btn btn-secondary push-btn" id="pushBtn" type="button">🔔 Notify me</button>
                 </div>
 
                 <div id="last-redeem" class="last-redeem"></div>
@@ -91,7 +92,7 @@
 
 <!-- ── Floating Redeem Button ── -->
 <button class="redeem-fab" id="redeemFab" title="Tap: auto redeem | Hold: enter code">
-    🎁
+    <span class="fab-icon">🎁</span>
     <span class="fab-tooltip">Tap: Auto · Hold: Manual</span>
 </button>
 <div class="redeem-toast" id="redeemToast"></div>
@@ -126,16 +127,19 @@
             <div class="modal-title">Enter Gift Code</div>
             <button class="modal-close" onclick="closeCodeModal()">✕</button>
         </div>
-        <div class="form-group">
-            <label class="form-label">Gift Code</label>
-            <input type="text" class="form-input" id="manual-code-input"
-                   placeholder="e.g. TGIF1107" autocomplete="off" autocapitalize="characters"
-                   onkeydown="if(event.key==='Enter') submitManualCode()">
-        </div>
-        <div class="form-actions">
-            <button class="btn btn-secondary" onclick="closeCodeModal()">Cancel</button>
-            <button class="btn btn-primary" onclick="submitManualCode()">Redeem</button>
-        </div>
+        <!-- real <form> so mobile keyboards' "Go/Enter" submits -->
+        <form id="code-form">
+            <div class="form-group">
+                <label class="form-label">Gift Code</label>
+                <input type="text" class="form-input" id="manual-code-input"
+                       placeholder="e.g. TGIF1107" autocomplete="off" autocapitalize="characters"
+                       enterkeyhint="go">
+            </div>
+            <div class="form-actions">
+                <button class="btn btn-secondary" type="button" onclick="closeCodeModal()">Cancel</button>
+                <button class="btn btn-primary" type="submit">Redeem</button>
+            </div>
+        </form>
     </div>
 </div>
 
@@ -144,6 +148,7 @@
 <script src="js/guides.js"></script>
 <script src="js/redeem.js"></script>
 <script src="js/status.js"></script>
+<script src="js/push.js"></script>
 <script src="js/pwa-install.js"></script>
 <script>
 // Register Service Worker (PWA) — additive only, no logic change
