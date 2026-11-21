@@ -2,7 +2,7 @@
 /* Additive only: does not touch app logic. Caches same-origin static assets. */
 /* External APIs (Google Sheets, Workers, raw GitHub) are network-only. */
 
-const CACHE_NAME = 'k1266-v5';
+const CACHE_NAME = 'k1266-v6';
 const ASSETS = [
   './',
   './index.html',
@@ -25,15 +25,19 @@ const ASSETS = [
 ];
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then((cache) => cache.addAll(ASSETS))
-      .then(() => self.skipWaiting())
-      .catch((err) => {
-        // install should not fail completely if one asset missing
-        console.warn('[SW] install cache failed', err);
-      })
-  );
+  event.waitUntil((async () => {
+    const cache = await caches.open(CACHE_NAME);
+    // Cache assets one by one: a single missing file must not block the whole
+    // update (that used to leave phones stuck on an old redeem.js forever).
+    await Promise.all(ASSETS.map(async (asset) => {
+      try {
+        await cache.add(asset);
+      } catch (err) {
+        console.warn('[SW] could not cache', asset, err);
+      }
+    }));
+    await self.skipWaiting();
+  })());
 });
 
 self.addEventListener('activate', (event) => {
@@ -62,10 +66,12 @@ self.addEventListener('fetch', (event) => {
   if (req.mode === 'navigate') {
     event.respondWith((async () => {
       try {
-        const networkResp = await fetch(req);
+        const networkResp = await fetch(req, { cache: 'no-store' });
         // update cache with fresh index.html (best-effort)
-        const cache = await caches.open(CACHE_NAME);
-        cache.put(req, networkResp.clone());
+        if (networkResp && networkResp.status === 200) {
+          const cache = await caches.open(CACHE_NAME);
+          cache.put(req, networkResp.clone());
+        }
         return networkResp;
       } catch (e) {
         const cache = await caches.open(CACHE_NAME);
@@ -80,7 +86,27 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // For same-origin static assets: cache-first, then network
+  // Code assets (JS/CSS/HTML/manifest/data): network-first, so a new deploy is
+  // picked up on the next load instead of being served stale from the cache.
+  const isCodeAsset = /\.(?:js|css|html|webmanifest|json)$/.test(url.pathname);
+  if (isCodeAsset) {
+    event.respondWith((async () => {
+      const cache = await caches.open(CACHE_NAME);
+      try {
+        const networkResp = await fetch(req, { cache: 'no-store' });
+        if (networkResp && networkResp.status === 200 && networkResp.type === 'basic') {
+          cache.put(req, networkResp.clone());
+        }
+        return networkResp;
+      } catch (e) {
+        const cached = await cache.match(req);
+        return cached || Response.error();
+      }
+    })());
+    return;
+  }
+
+  // Images/icons: cache-first (large and rarely change)
   event.respondWith((async () => {
     const cache = await caches.open(CACHE_NAME);
     const cached = await cache.match(req);
@@ -88,14 +114,11 @@ self.addEventListener('fetch', (event) => {
 
     try {
       const networkResp = await fetch(req);
-      // Only cache successful, basic/cors-opaque? but same-origin so basic
       if (networkResp && networkResp.status === 200 && networkResp.type === 'basic') {
         cache.put(req, networkResp.clone());
       }
       return networkResp;
     } catch (e) {
-      // if both cache and network fail, return error
-      // For images/css/js fallback could return empty but we let it fail
       return Response.error();
     }
   })());

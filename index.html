@@ -154,8 +154,21 @@
 // Register Service Worker (PWA) — additive only, no logic change
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js').catch((e) => console.warn('SW registration failed', e));
+    navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' })
+      .then((reg) => reg.update().catch(() => {}))
+      .catch((e) => console.warn('SW registration failed', e));
   });
+
+  // When an updated service worker takes over, reload once so the page runs
+  // the fresh JS/CSS. Skip the first install (page starts uncontrolled).
+  if (navigator.serviceWorker.controller) {
+    let swRefreshing = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (swRefreshing) return;
+      swRefreshing = true;
+      location.reload();
+    });
+  }
 }
 </script>
 </body>

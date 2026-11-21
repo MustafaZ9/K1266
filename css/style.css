@@ -671,6 +671,9 @@ body::before {
     border-radius: var(--radius-lg);
     font-size: var(--text-sm);
     font-weight: 600;
+    line-height: 1.4;
+    white-space: pre-line;
+    max-width: min(420px, calc(100vw - 32px));
     box-shadow: var(--shadow-lg);
     opacity: 0;
     transform: translateY(20px);

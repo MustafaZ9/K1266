@@ -24,12 +24,12 @@
     let cancelled = false;
     let startX = 0, startY = 0;
 
-    function showToast(message, type) {
+    function showToast(message, type, duration = 4000) {
         if (!toast) return;
         toast.textContent = message;
         toast.className = `redeem-toast show ${type}`;
         clearTimeout(toastTimer);
-        toastTimer = setTimeout(() => toast.classList.remove('show'), 4000);
+        toastTimer = setTimeout(() => toast.classList.remove('show'), duration);
     }
 
     function vibrate(ms) {
@@ -82,47 +82,125 @@
         fab.classList.remove('holding');
     }
 
-    /* ── Auto trigger (tap) ── */
-    async function triggerAuto() {
+    /* ── Worker request helper ──
+       Content-Type is text/plain on purpose: that makes the POST a CORS
+       "simple request", so the browser does NOT send an OPTIONS preflight.
+       Some mobile networks / proxy DNS filters drop the preflight even when
+       the worker itself is reachable — that was the phone-only "Network
+       error". The body is still JSON and the worker parses it either way.
+       Also: always send a body (`{}` for auto), add a timeout, and retry a
+       dropped connection once. */
+    const REQUEST_TIMEOUT_MS = 15000;
+    const HEALTH_TIMEOUT_MS = 6000;
+    const RETRY_DELAY_MS = 1200;
+
+    function delay(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    async function fetchWithTimeout(url, options, timeoutMs) {
+        if (typeof AbortController === 'undefined') return fetch(url, options);
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+            return await fetch(url, { ...options, signal: controller.signal });
+        } finally {
+            clearTimeout(timer);
+        }
+    }
+
+    async function callWorker(body) {
+        // Cache-buster: avoids a stale cached response / stuck connection for
+        // the exact same URL (seen on mobile after the worker was redeployed).
+        const url = WORKER_URL + '/?t=' + Date.now();
+        const resp = await fetchWithTimeout(url, {
+            method: 'POST',
+            mode: 'cors',
+            headers: {
+                'Content-Type': 'text/plain',
+                'Accept': 'application/json',
+            },
+            body: JSON.stringify(body || {}),
+        }, REQUEST_TIMEOUT_MS);
+        const data = await resp.json().catch(() => null);
+        return { resp, data };
+    }
+
+    /* After a failure, check whether this device can reach the worker at all,
+       so the toast can say "network block" instead of a generic error. */
+    async function workerReachable() {
+        try {
+            const resp = await fetchWithTimeout(WORKER_URL + '/health?t=' + Date.now(), {
+                method: 'GET',
+                mode: 'cors',
+                headers: { 'Accept': 'application/json' },
+            }, HEALTH_TIMEOUT_MS);
+            return resp.ok;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    async function runTrigger(body) {
         setBusy(true);
         try {
-            const resp = await fetch(WORKER_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
-            });
-            const data = await resp.json().catch(() => null);
-            if (resp.ok && data?.success) {
-                showToast('✅ ' + (data.message || 'Redemption triggered!'), 'success');
-                try { localStorage.setItem('lastRedeem', Date.now()); } catch (e) {}
-            } else {
-                showToast(`❌ Failed: ${data?.error || resp.statusText}`, 'error');
+            let result;
+            try {
+                result = await callWorker(body);
+            } catch (firstErr) {
+                // One retry for a dropped mobile connection; don't retry a timeout.
+                if (firstErr && firstErr.name === 'AbortError') throw firstErr;
+                await delay(RETRY_DELAY_MS);
+                result = await callWorker(body);
             }
-        } catch {
-            showToast('❌ Network error. Is the worker running?', 'error');
+
+            const { resp, data } = result;
+            if (resp.ok && data?.success) {
+                return { ok: true, message: data.message };
+            }
+            return {
+                ok: false,
+                message: `❌ Failed: ${data?.error || resp.statusText || 'HTTP ' + resp.status}`,
+            };
+        } catch (err) {
+            const reachable = await workerReachable();
+            if (!reachable) {
+                return {
+                    ok: false,
+                    message: '❌ This device cannot reach the worker (network/DNS block). Try mobile data or a VPN.',
+                };
+            }
+            return {
+                ok: false,
+                message: err && err.name === 'AbortError'
+                    ? '⏱ Worker did not answer in time — try again.'
+                    : '❌ Network error — the worker is reachable but the trigger failed. Try again.',
+            };
+        } finally {
+            setBusy(false);
         }
-        setBusy(false);
+    }
+
+    /* ── Auto trigger (tap) ── */
+    async function triggerAuto() {
+        const result = await runTrigger({});
+        if (result.ok) {
+            showToast('✅ ' + (result.message || 'Redemption triggered!'), 'success');
+            try { localStorage.setItem('lastRedeem', Date.now()); } catch (e) {}
+        } else {
+            showToast(result.message, 'error', 7000);
+        }
     }
 
     /* ── Manual code (hold) ── */
     async function triggerManual(code) {
-        setBusy(true);
-        try {
-            const resp = await fetch(WORKER_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ code })
-            });
-            const data = await resp.json().catch(() => null);
-            if (resp.ok && data?.success) {
-                showToast('✅ ' + (data.message || `Code "${code}" sent!`), 'success');
-                try { localStorage.setItem('lastRedeem', Date.now()); } catch (e) {}
-            } else {
-                showToast(`❌ Failed: ${data?.error || resp.statusText}`, 'error');
-            }
-        } catch {
-            showToast('❌ Network error.', 'error');
+        const result = await runTrigger({ code });
+        if (result.ok) {
+            showToast('✅ ' + (result.message || `Code "${code}" sent!`), 'success');
+            try { localStorage.setItem('lastRedeem', Date.now()); } catch (e) {}
+        } else {
+            showToast(result.message, 'error', 7000);
         }
-        setBusy(false);
     }
 
     function openCodeModal(skipFocus) {
@@ -146,16 +224,19 @@
         cancelled = false;
         startX = e.clientX;
         startY = e.clientY;
+        const fromTouch = e.pointerType === 'touch' || e.pointerType === 'pen';
         try { fab.setPointerCapture(e.pointerId); } catch (err) { /* keep going without capture */ }
         ringStart();
         vibrate(10);
         clearTimeout(pressTimer);
         pressTimer = setTimeout(() => {
             pressTimer = null;
+            // contextmenu may already have opened it (Android fires that first)
+            if (modal?.classList.contains('open')) return;
             longPressFired = true;
             ringReset();
             vibrate(40);
-            openCodeModal(e.pointerType === 'touch');
+            openCodeModal(fromTouch);
         }, LONG_PRESS_MS);
     }
 
@@ -196,7 +277,19 @@
     fab?.addEventListener('pointerup', onPointerUp);
     fab?.addEventListener('pointercancel', onPointerCancel);
     fab?.addEventListener('lostpointercapture', onPointerCancel);
-    fab?.addEventListener('contextmenu', (e) => e.preventDefault());
+    // Long-press fallback: Android fires contextmenu during a hold even when a
+    // pointercancel kills the 600ms timer. Right-click on desktop does the same.
+    // Both open manual entry, so hold-to-enter-code works on every device.
+    fab?.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        if (!fab || fab.disabled || modal?.classList.contains('open')) return;
+        clearTimeout(pressTimer);
+        pressTimer = null;
+        longPressFired = true;
+        ringReset();
+        vibrate(40);
+        openCodeModal(true);
+    });
     // keyboard activation (Enter/Space on a focused button) — clicks have detail 0
     fab?.addEventListener('click', (e) => {
         if (e.detail === 0 && !fab.disabled && !modal?.classList.contains('open')) triggerAuto();

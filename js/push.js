@@ -55,7 +55,9 @@
         try {
             await fetch(WORKER_URL + '/unsubscribe', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                mode: 'cors',
+                // text/plain → CORS simple request, no OPTIONS preflight
+                headers: { 'Content-Type': 'text/plain' },
                 body: JSON.stringify({ endpoint }),
             });
         } catch (e) { /* best effort */ }
@@ -98,7 +100,9 @@
             });
             const resp = await fetch(WORKER_URL + '/subscribe', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                mode: 'cors',
+                // text/plain → CORS simple request, no OPTIONS preflight
+                headers: { 'Content-Type': 'text/plain' },
                 body: JSON.stringify(sub.toJSON()),
             });
             const data = await resp.json().catch(() => null);

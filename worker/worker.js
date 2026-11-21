@@ -12,8 +12,11 @@
 //   Cron Trigger: */5 * * * *
 //
 // Endpoints:
-//   POST /             -> trigger auto scrape + redeem   (unchanged legacy behavior)
-//   POST { code }      -> trigger manual code redemption (unchanged legacy behavior)
+//   POST /             -> trigger auto scrape + redeem   (JSON body optional)
+//   POST { code }      -> trigger manual code redemption
+//   NOTE: the trigger body is parsed as text, so the PWA can send it with
+//   Content-Type: text/plain — a CORS "simple request" with no OPTIONS
+//   preflight (mobile networks often break the preflight).
 //   POST /subscribe    -> save Web Push subscription   (public)
 //   POST /unsubscribe  -> remove Web Push subscription (public)
 //   POST /push-test    -> test push to all subscribers (X-Admin-Key header required)
@@ -113,8 +116,9 @@ async function encryptPayload(payloadString, subscriptionKeys) {
     }
 
     // 1. Ephemeral server ECDH key pair
-    const eph = await crypto.subtle.generateKey(
-        { name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+    /** @type {EcKeyGenParams} */
+    const ecdhParams = { name: 'ECDH', namedCurve: 'P-256' };
+    const eph = await crypto.subtle.generateKey(ecdhParams, true, ['deriveBits']);
     const ephPubRaw = new Uint8Array(await crypto.subtle.exportKey('raw', eph.publicKey));
 
     // 2. ECDH shared secret with the user's public key
@@ -183,6 +187,8 @@ async function sendWebPush(subscription, payloadString, vapid) {
 
 const LOG_URL = 'https://raw.githubusercontent.com/MustafaZ9/autokgc/main/redeemed_codes.txt';
 const SITE_URL = 'https://mustafaz9.github.io/K1266/';
+// Bumped on every deploy so /health proves which code is live.
+const WORKER_VERSION = '2026-11-21-textplain';
 
 const CORS_HEADERS = {
     'Access-Control-Allow-Origin': '*',
@@ -194,6 +200,17 @@ const CORS_HEADERS = {
 const json = (obj, status = 200) => new Response(
     JSON.stringify(obj),
     { status, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
+
+/* Parse a JSON body regardless of Content-Type. The PWA sends text/plain so
+   the request stays a CORS "simple request" (no OPTIONS preflight). */
+async function readJson(request) {
+    try {
+        const raw = await request.text();
+        return raw ? JSON.parse(raw) : null;
+    } catch (e) {
+        return null;
+    }
+}
 
 async function sha256Hex(str) {
     const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
@@ -334,13 +351,13 @@ export default {
             /* ── GET /health — quick status check ── */
             if (path === '/health' && request.method === 'GET') {
                 const subscribers = env.PUSH_SUBS ? (await listSubscriptions(env)).length : 0;
-                return json({ ok: true, subscribers, pushConfigured: pushConfigured(env) });
+                return json({ ok: true, subscribers, pushConfigured: pushConfigured(env), version: WORKER_VERSION });
             }
 
             /* ── POST /subscribe — save a Web Push subscription ── */
             if (path === '/subscribe' && request.method === 'POST') {
                 if (!env.PUSH_SUBS) return json({ success: false, error: 'Push storage not configured (KV binding PUSH_SUBS missing)' }, 503);
-                const sub = await request.json().catch(() => null);
+                const sub = await readJson(request);
                 const valid = sub
                     && typeof sub.endpoint === 'string' && sub.endpoint.startsWith('https://')
                     && sub.keys && typeof sub.keys.p256dh === 'string' && typeof sub.keys.auth === 'string';
@@ -356,7 +373,7 @@ export default {
             /* ── POST /unsubscribe — remove a Web Push subscription ── */
             if (path === '/unsubscribe' && request.method === 'POST') {
                 if (!env.PUSH_SUBS) return json({ success: false, error: 'Push storage not configured' }, 503);
-                const body = await request.json().catch(() => null);
+                const body = await readJson(request);
                 if (!body || typeof body.endpoint !== 'string') return json({ success: false, error: 'Invalid endpoint' }, 400);
                 await env.PUSH_SUBS.delete('sub:' + await sha256Hex(body.endpoint));
                 return json({ success: true });
@@ -368,7 +385,7 @@ export default {
                     return json({ success: false, error: 'Unauthorized (X-Admin-Key header required)' }, 403);
                 }
                 if (!pushConfigured(env)) return json({ success: false, error: 'Push not configured (KV binding or VAPID keys missing)' }, 503);
-                const body = await request.json().catch(() => ({}));
+                const body = (await readJson(request)) || {};
                 const result = await pushToAll(env, {
                     title: '🔔 K1266 test push',
                     body: (body && body.message) || 'Web Push is working! You will be notified when a new gift code appears.',
@@ -391,16 +408,12 @@ export default {
             }
 
             let manualCode = null;
-            try {
-                const body = await request.json();
-                if (body && body.code && typeof body.code === 'string') {
-                    manualCode = body.code.trim();
-                    if (!/^[A-Za-z0-9_]{3,30}$/.test(manualCode)) {
-                        return json({ success: false, error: 'Invalid code format. Use 3-30 alphanumeric characters.' }, 400);
-                    }
+            const body = await readJson(request);
+            if (body && body.code && typeof body.code === 'string') {
+                manualCode = body.code.trim();
+                if (!/^[A-Za-z0-9_]{3,30}$/.test(manualCode)) {
+                    return json({ success: false, error: 'Invalid code format. Use 3-30 alphanumeric characters.' }, 400);
                 }
-            } catch (e) {
-                // No body or invalid JSON — fine, proceed with normal trigger
             }
 
             const payload = {
