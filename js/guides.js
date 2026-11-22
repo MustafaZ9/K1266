@@ -24,7 +24,7 @@ function formatContent(text) {
 
 async function loadGuides() {
     try {
-        const resp = await fetch('data/guides.json');
+        const resp = await fetch('data/guides.json?v=20261121-1');
         guidesData = await resp.json();
     } catch (e) {
         console.error('Failed to load guides:', e);

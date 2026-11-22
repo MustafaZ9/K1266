@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>K1266 Network Diagnostics</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; padding: 18px;
+    background: #06060b; color: #e8e8f0;
+    font: 16px/1.45 "Roboto Mono", ui-monospace, monospace;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  p.sub { margin: 0 0 18px; color: #8a8aa0; font-size: 13px; }
+  .test {
+    border: 1px solid #24243a; border-radius: 10px;
+    padding: 12px 14px; margin: 0 0 10px; background: #0d0d16;
+  }
+  .test .name { font-weight: 700; font-size: 15px; }
+  .test .result { margin-top: 6px; font-size: 14px; word-break: break-word; }
+  .pending { color: #d8b84a; }
+  .ok { color: #4ade80; }
+  .fail { color: #ff5c5c; }
+  .info { color: #8a8aa0; font-size: 13px; margin-top: 6px; word-break: break-word; }
+  button {
+    width: 100%; padding: 14px; margin: 6px 0 18px;
+    background: #1b1b2e; color: #e8e8f0; border: 1px solid #34345a;
+    border-radius: 10px; font: inherit; font-weight: 700;
+  }
+  button:active { background: #262644; }
+  #summary { font-size: 15px; font-weight: 700; margin: 0 0 14px; }
+</style>
+</head>
+<body>
+<h1>K1266 Network Diagnostics</h1>
+<p class="sub">Runs on this device. Tap “Copy results” and send them back.</p>
+<div id="summary" class="pending">Running tests…</div>
+<button id="copy">Copy results</button>
+<div id="tests"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  var WORKER = 'https://autokgc-trigger.twikilab.workers.dev';
+  var results = [];
+  var container = document.getElementById('tests');
+
+  function addTest(name) {
+    var el = document.createElement('div');
+    el.className = 'test';
+    el.innerHTML = '<div class="name"></div><div class="result pending">pending…</div>';
+    el.querySelector('.name').textContent = name;
+    container.appendChild(el);
+    return el.querySelector('.result');
+  }
+
+  function fmtErr(err) {
+    if (!err) return 'unknown error';
+    return (err.name || 'Error') + ': ' + (err.message || String(err));
+  }
+
+  function withTimeout(promise, ms) {
+    var timer;
+    var timeout = new Promise(function (_, reject) {
+      timer = setTimeout(function () {
+        var e = new Error('timed out after ' + ms + 'ms');
+        e.name = 'TimeoutError';
+        reject(e);
+      }, ms);
+    });
+    return Promise.race([promise, timeout]).finally(function () { clearTimeout(timer); });
+  }
+
+  async function testFetch(url, options, timeoutMs) {
+    var started = Date.now();
+    var resp = await withTimeout(fetch(url, options), timeoutMs);
+    return { resp: resp, ms: Date.now() - started };
+  }
+
+  async function run() {
+    var summary = document.getElementById('summary');
+    var failures = 0;
+
+    // 1. Worker /health with CORS (what the app actually needs)
+    var el1 = addTest('1. Worker /health (CORS)');
+    try {
+      var r1 = await testFetch(WORKER + '/health?diag=' + Date.now(), {
+        mode: 'cors', cache: 'no-store', headers: { 'Accept': 'application/json' }
+      }, 8000);
+      var body = (await r1.resp.text()).slice(0, 200);
+      el1.className = 'result ok';
+      el1.textContent = 'HTTP ' + r1.resp.status + ' in ' + r1.ms + 'ms — ' + body;
+      results.push('worker-cors: HTTP ' + r1.resp.status + ' in ' + r1.ms + 'ms — ' + body);
+    } catch (e) {
+      failures++;
+      el1.className = 'result fail';
+      el1.textContent = fmtErr(e);
+      results.push('worker-cors: FAIL ' + fmtErr(e));
+    }
+
+    // 2. Worker /health without CORS (tests DNS/TCP/TLS only)
+    var el2 = addTest('2. Worker /health (no-cors, network only)');
+    try {
+      var r2 = await testFetch(WORKER + '/health?diag=' + Date.now(), {
+        mode: 'no-cors', cache: 'no-store'
+      }, 8000);
+      el2.className = 'result ok';
+      el2.textContent = 'opaque response in ' + r2.ms + 'ms (network reaches the worker)';
+      results.push('worker-nocors: opaque in ' + r2.ms + 'ms');
+    } catch (e) {
+      failures++;
+      el2.className = 'result fail';
+      el2.textContent = fmtErr(e);
+      results.push('worker-nocors: FAIL ' + fmtErr(e));
+    }
+
+    // 3. Control: GitHub API (known-good cross-origin host)
+    var el3 = addTest('3. Control: api.github.com');
+    try {
+      var r3 = await testFetch('https://api.github.com/zen?diag=' + Date.now(), {
+        mode: 'cors', cache: 'no-store'
+      }, 8000);
+      el3.className = 'result ok';
+      el3.textContent = 'HTTP ' + r3.resp.status + ' in ' + r3.ms + 'ms';
+      results.push('github: HTTP ' + r3.resp.status + ' in ' + r3.ms + 'ms');
+    } catch (e) {
+      failures++;
+      el3.className = 'result fail';
+      el3.textContent = fmtErr(e);
+      results.push('github: FAIL ' + fmtErr(e));
+    }
+
+    // 4. Control: Google
+    var el4 = addTest('4. Control: google.com');
+    try {
+      var r4 = await testFetch('https://www.google.com/generate_204?diag=' + Date.now(), {
+        mode: 'no-cors', cache: 'no-store'
+      }, 8000);
+      el4.className = 'result ok';
+      el4.textContent = 'opaque response in ' + r4.ms + 'ms';
+      results.push('google: opaque in ' + r4.ms + 'ms');
+    } catch (e) {
+      failures++;
+      el4.className = 'result fail';
+      el4.textContent = fmtErr(e);
+      results.push('google: FAIL ' + fmtErr(e));
+    }
+
+    // 5. Same-origin control (the page itself)
+    var el5 = addTest('5. Same-origin: manifest');
+    try {
+      var r5 = await testFetch('./manifest.webmanifest?diag=' + Date.now(), {
+        cache: 'no-store'
+      }, 8000);
+      el5.className = 'result ok';
+      el5.textContent = 'HTTP ' + r5.resp.status + ' in ' + r5.ms + 'ms';
+      results.push('same-origin: HTTP ' + r5.resp.status + ' in ' + r5.ms + 'ms');
+    } catch (e) {
+      failures++;
+      el5.className = 'result fail';
+      el5.textContent = fmtErr(e);
+      results.push('same-origin: FAIL ' + fmtErr(e));
+    }
+
+    // 6. DNS-over-HTTPS lookup of the worker (bypasses the phone's resolver)
+    var el6 = addTest('6. Public DNS lookup of worker (DoH)');
+    try {
+      var r6 = await testFetch('https://cloudflare-dns.com/dns-query?name=autokgc-trigger.twikilab.workers.dev&type=A', {
+        mode: 'cors', cache: 'no-store', headers: { 'Accept': 'application/dns-json' }
+      }, 8000);
+      var dns = await r6.resp.json();
+      var ips = (dns.Answer || []).map(function (a) { return a.data; }).join(', ');
+      el6.className = 'result ok';
+      el6.textContent = 'HTTP ' + r6.resp.status + ' in ' + r6.ms + 'ms — ' + (ips || 'no A records');
+      results.push('doh: HTTP ' + r6.resp.status + ' in ' + r6.ms + 'ms — ' + (ips || 'no A records'));
+    } catch (e) {
+      el6.className = 'result fail';
+      el6.textContent = fmtErr(e);
+      results.push('doh: FAIL ' + fmtErr(e));
+    }
+
+    // Environment info
+    var conn = navigator.connection || {};
+    var info = [
+      'online: ' + navigator.onLine,
+      'connection: ' + (conn.effectiveType || '?') + ' / ' + (conn.type || '?') + ' / downlink ' + (conn.downlink || '?'),
+      'SW controller: ' + (navigator.serviceWorker && navigator.serviceWorker.controller
+        ? navigator.serviceWorker.controller.scriptURL : 'none'),
+      'UA: ' + navigator.userAgent
+    ];
+    var infoEl = document.createElement('div');
+    infoEl.className = 'test info';
+    infoEl.textContent = info.join('\n');
+    infoEl.style.whiteSpace = 'pre-wrap';
+    container.appendChild(infoEl);
+    results.push('--- env ---', info.join(' | '));
+
+    summary.className = failures ? 'fail' : 'ok';
+    summary.textContent = failures
+      ? failures + ' test(s) failed — tap Copy results'
+      : 'All tests passed — tap Copy results';
+  }
+
+  document.getElementById('copy').addEventListener('click', async function () {
+    var text = results.join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      this.textContent = 'Copied ✓';
+    } catch (e) {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+      this.textContent = 'Copied ✓';
+    }
+  });
+
+  run();
+})();
+</script>
+</body>
+</html>
