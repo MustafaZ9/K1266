@@ -167,7 +167,7 @@
             if (!reachable) {
                 return {
                     ok: false,
-                    message: '❌ This device cannot reach the worker (network/DNS block). Try mobile data or a VPN.',
+                    message: '❌ This device cannot reach the worker. If Private DNS is set to 1.1.1.1 (one.one.one.one), set it to Off or dns.google, then retry.',
                 };
             }
             return {
